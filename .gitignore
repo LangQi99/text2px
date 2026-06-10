@@ -6,12 +6,22 @@ __pycache__/
 # Checkpoints and models
 checkpoints/*
 !checkpoints/final_model.pt
+!checkpoints/reference_box/
+!checkpoints/reference_box/final-model.pt
+!checkpoints/reference_box/metadata.json
 *.pt
 !checkpoints/final_model.pt
+!checkpoints/reference_box/final-model.pt
 *.pth
 
 # Generated outputs
 outputs/
+!outputs/
+outputs/*
+!outputs/reference_box_model_ddpm/
+!outputs/reference_box_model_ddpm/*.png
+!outputs/reference_box_dataset/
+!outputs/reference_box_dataset/*.png
 samples/
 
 # Dataset images (too large for git)
@@ -28,3 +38,4 @@ Thumbs.db
 # Env
 .env
 venv/
+.venv/

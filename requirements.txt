@@ -3,3 +3,4 @@ Pillow
 numpy
 pyyaml
 tqdm
+tokenizers
