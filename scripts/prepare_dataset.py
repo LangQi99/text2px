@@ -11,7 +11,11 @@ import sys
 import json
 import zipfile
 import shutil
+import urllib.request
 from pathlib import Path
+
+
+DEFAULT_VERSION_MANIFEST_URL = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
 
 
 ITEM_DESCRIPTIONS = {
@@ -270,16 +274,66 @@ def extract_from_dir(assets_dir, output_dir):
     return found
 
 
+def download_client_jar(version="release", cache_dir="data/downloads"):
+    os.makedirs(cache_dir, exist_ok=True)
+    print("Fetching Minecraft version manifest...")
+    with urllib.request.urlopen(DEFAULT_VERSION_MANIFEST_URL, timeout=30) as response:
+        manifest = json.load(response)
+
+    if version in ("release", "latest"):
+        version_id = manifest["latest"]["release"]
+    elif version == "snapshot":
+        version_id = manifest["latest"]["snapshot"]
+    else:
+        version_id = version
+
+    version_meta = None
+    for entry in manifest["versions"]:
+        if entry["id"] == version_id:
+            version_meta = entry
+            break
+
+    if version_meta is None:
+        raise ValueError(f"Could not find Minecraft version: {version_id}")
+
+    print(f"Fetching Minecraft {version_id} metadata...")
+    with urllib.request.urlopen(version_meta["url"], timeout=30) as response:
+        metadata = json.load(response)
+
+    client_url = metadata["downloads"]["client"]["url"]
+    jar_path = os.path.join(cache_dir, f"minecraft-{version_id}-client.jar")
+
+    if os.path.exists(jar_path):
+        print(f"Using cached client jar: {jar_path}")
+        return jar_path
+
+    print(f"Downloading Minecraft client jar: {version_id}")
+    print(client_url)
+    urllib.request.urlretrieve(client_url, jar_path)
+    return jar_path
+
+
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python prepare_dataset.py <minecraft_jar_or_assets_dir> [output_dir]")
+        source = "--download"
+        output_dir = "data/minecraft_items"
+    else:
+        source = sys.argv[1]
+        output_dir = sys.argv[2] if len(sys.argv) > 2 else "data/minecraft_items"
+
+    if source in ("--download", "download", "latest"):
+        source = download_client_jar("release")
+    elif source.startswith("--version="):
+        source = download_client_jar(source.split("=", 1)[1])
+
+    if source in ("-h", "--help"):
+        print("Usage: python prepare_dataset.py [<minecraft_jar_or_assets_dir>|--download|--version=<id>] [output_dir]")
         print("\nProvide either:")
         print("  - Path to minecraft .jar file")
         print("  - Path to extracted assets directory containing textures/item/*.png")
+        print("  - --download to download the latest official client jar from Mojang")
+        print("\nNo arguments defaults to --download.")
         sys.exit(1)
-
-    source = sys.argv[1]
-    output_dir = sys.argv[2] if len(sys.argv) > 2 else "data/minecraft_items"
 
     if source.endswith('.jar') or source.endswith('.zip'):
         print(f"Extracting from JAR: {source}")

@@ -110,3 +110,37 @@ class GaussianDiffusion:
             x = self.p_sample(model, x, t, tokens, token_mask)
 
         return x
+
+    @torch.no_grad()
+    def sample_ddim(self, model, tokens, token_mask=None, image_size=16, channels=4, steps=50, eta=0.0):
+        """Fast deterministic DDIM sampler for interactive generation."""
+        device = next(model.parameters()).device
+        batch_size = tokens.shape[0]
+        x = torch.randn(batch_size, channels, image_size, image_size, device=device)
+
+        steps = max(2, min(int(steps), self.timesteps))
+        time_pairs = torch.linspace(self.timesteps - 1, 0, steps, device=device).long().tolist()
+
+        for idx, t_val in enumerate(time_pairs):
+            t = torch.full((batch_size,), t_val, device=device, dtype=torch.long)
+            pred_noise = model(x, t, tokens, token_mask)
+
+            alpha_t = self._extract(self.alphas_cumprod.to(device), t, x.shape)
+            x_start = (x - torch.sqrt(1.0 - alpha_t) * pred_noise) / torch.sqrt(alpha_t)
+            x_start = torch.clamp(x_start, -1, 1)
+
+            if idx == len(time_pairs) - 1:
+                x = x_start
+                continue
+
+            t_next = torch.full((batch_size,), time_pairs[idx + 1], device=device, dtype=torch.long)
+            alpha_next = self._extract(self.alphas_cumprod.to(device), t_next, x.shape)
+
+            sigma = eta * torch.sqrt(
+                (1 - alpha_next) / (1 - alpha_t) * (1 - alpha_t / alpha_next)
+            )
+            c = torch.sqrt(torch.clamp(1 - alpha_next - sigma ** 2, min=0.0))
+            noise = torch.randn_like(x) if eta > 0 else 0
+            x = torch.sqrt(alpha_next) * x_start + c * pred_noise + sigma * noise
+
+        return x

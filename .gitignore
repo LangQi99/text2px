@@ -4,8 +4,10 @@ __pycache__/
 *$py.class
 
 # Checkpoints and models
-checkpoints/
+checkpoints/*
+!checkpoints/final_model.pt
 *.pt
+!checkpoints/final_model.pt
 *.pth
 
 # Generated outputs

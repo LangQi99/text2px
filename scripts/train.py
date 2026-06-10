@@ -17,6 +17,7 @@ from model.dit import Text2PxDiT
 from model.diffusion import GaussianDiffusion
 from model.tokenizer import CharTokenizer
 from data.dataset import MinecraftItemDataset
+from scripts.prepare_dataset import download_client_jar, extract_from_jar
 
 
 def load_config(path):
@@ -67,10 +68,19 @@ def train():
     print(f"Using device: {device}")
 
     data_dir = config['data']['dataset_dir']
+    labels_path = os.path.join(data_dir, 'labels.json')
+    if not os.path.exists(labels_path):
+        print(f"Dataset not found at {data_dir}; downloading latest official Minecraft client jar.")
+        jar_path = download_client_jar("release")
+        labels = extract_from_jar(jar_path, data_dir)
+        with open(labels_path, 'w') as f:
+            import json
+            json.dump(labels, f, indent=2, ensure_ascii=False)
+        print(f"Prepared {len(labels)} Minecraft item textures.")
+
     tokenizer = CharTokenizer(max_len=config['model']['max_text_len'])
 
     import json
-    labels_path = os.path.join(data_dir, 'labels.json')
     with open(labels_path) as f:
         labels = json.load(f)
     tokenizer.fit(labels.values())
@@ -95,9 +105,10 @@ def train():
         image_size=config['data']['image_size'],
         augment=config['data'].get('augment', False),
     )
+    drop_last = len(dataset) > config['training']['batch_size'] * 2
     dataloader = DataLoader(
-        dataset, batch_size=config['training']['batch_size'],
-        shuffle=True, num_workers=2, pin_memory=True, drop_last=True
+        dataset, batch_size=min(config['training']['batch_size'], len(dataset)),
+        shuffle=True, num_workers=0, pin_memory=True, drop_last=drop_last
     )
 
     optimizer = AdamW(
