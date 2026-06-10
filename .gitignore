@@ -1,0 +1,28 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Checkpoints and models
+checkpoints/
+*.pt
+*.pth
+
+# Generated outputs
+outputs/
+samples/
+
+# Dataset images (too large for git)
+data/minecraft_items/images/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+venv/
