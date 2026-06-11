@@ -1,0 +1,16 @@
+[project]
+name = "text2px"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "pillow",
+    "pyyaml",
+    "tokenizers",
+    "torch>=2.0",
+    "tqdm",
+]
+
+[[tool.uv.index]]
+url = "https://bytedpypi.byted.org/simple/"
+default = true

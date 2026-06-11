@@ -1,10 +1,9 @@
 """
 Web UI for Text2Px - Generate 16x16 pixel art from text.
-Uses only standard library (no Flask dependency).
+Uses the reference DiT pipeline with BPE tokenizer and CFG.
 """
-import os
-import sys
 import io
+import sys
 import base64
 import json
 import torch
@@ -12,16 +11,18 @@ import numpy as np
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from PIL import Image
+from tokenizers import Tokenizer
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from model.dit import Text2PxDiT
-from model.diffusion import GaussianDiffusion
-from model.tokenizer import CharTokenizer
+from data.npy_dataset import denormalize_rgba
+from diffusion import create_diffusion
+from model.reference_dit import create_reference_dit
 
 model = None
 diffusion = None
 tokenizer = None
 device = None
+metadata = None
 
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="en">
@@ -48,11 +49,7 @@ HTML_PAGE = """<!DOCTYPE html>
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
-        .subtitle {
-            color: #888;
-            margin-bottom: 40px;
-            font-size: 0.9rem;
-        }
+        .subtitle { color: #888; margin-bottom: 40px; font-size: 0.9rem; }
         .container {
             background: #16213e;
             border-radius: 16px;
@@ -61,61 +58,38 @@ HTML_PAGE = """<!DOCTYPE html>
             max-width: 600px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
-        .input-group {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 24px;
-        }
+        .input-group { display: flex; gap: 12px; margin-bottom: 24px; }
         input[type="text"] {
-            flex: 1;
-            padding: 14px 18px;
-            border: 2px solid #2a3a5e;
-            border-radius: 10px;
-            background: #0f1629;
-            color: #eee;
-            font-size: 1rem;
-            font-family: inherit;
-            outline: none;
+            flex: 1; padding: 14px 18px;
+            border: 2px solid #2a3a5e; border-radius: 10px;
+            background: #0f1629; color: #eee;
+            font-size: 1rem; font-family: inherit; outline: none;
             transition: border-color 0.3s;
         }
         input[type="text"]:focus { border-color: #667eea; }
         button {
-            padding: 14px 28px;
-            border: none;
-            border-radius: 10px;
+            padding: 14px 28px; border: none; border-radius: 10px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            font-size: 1rem;
-            font-family: inherit;
-            cursor: pointer;
-            transition: transform 0.2s, opacity 0.2s;
+            color: white; font-size: 1rem; font-family: inherit;
+            cursor: pointer; transition: transform 0.2s, opacity 0.2s;
         }
         button:hover { transform: translateY(-2px); opacity: 0.9; }
         button:active { transform: translateY(0); }
         button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
         .result {
-            text-align: center;
-            min-height: 200px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
+            text-align: center; min-height: 200px;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
         }
         .result img {
-            image-rendering: pixelated;
-            image-rendering: crisp-edges;
-            width: 256px;
-            height: 256px;
-            border: 3px solid #2a3a5e;
-            border-radius: 8px;
+            image-rendering: pixelated; image-rendering: crisp-edges;
+            width: 256px; height: 256px;
+            border: 3px solid #2a3a5e; border-radius: 8px;
             background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 16px 16px;
         }
         .result .original {
-            width: 64px;
-            height: 64px;
-            margin-top: 12px;
-            border: 2px solid #2a3a5e;
-            border-radius: 4px;
+            width: 64px; height: 64px; margin-top: 12px;
+            border: 2px solid #2a3a5e; border-radius: 4px;
         }
         .loading { color: #667eea; font-size: 1.1rem; }
         .loading::after { content: ''; animation: dots 1.5s steps(4) infinite; }
@@ -129,13 +103,9 @@ HTML_PAGE = """<!DOCTYPE html>
         .examples h3 { font-size: 0.85rem; color: #666; margin-bottom: 10px; }
         .example-chips { display: flex; flex-wrap: wrap; gap: 8px; }
         .chip {
-            padding: 6px 14px;
-            background: #0f1629;
-            border: 1px solid #2a3a5e;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            cursor: pointer;
-            transition: all 0.2s;
+            padding: 6px 14px; background: #0f1629;
+            border: 1px solid #2a3a5e; border-radius: 20px;
+            font-size: 0.8rem; cursor: pointer; transition: all 0.2s;
         }
         .chip:hover { border-color: #667eea; background: #1a2440; }
         .footer { margin-top: 40px; color: #444; font-size: 0.75rem; }
@@ -144,10 +114,10 @@ HTML_PAGE = """<!DOCTYPE html>
 </head>
 <body>
     <h1>Text2Px</h1>
-    <p class="subtitle">Generate 16x16 pixel art from text descriptions</p>
+    <p class="subtitle">Generate 16x16 pixel art from text (DiT + Diffusion + CFG)</p>
     <div class="container">
         <div class="input-group">
-            <input type="text" id="prompt" placeholder="e.g. diamond sword, golden apple..."
+            <input type="text" id="prompt" placeholder="e.g. diamond sword, tool box, shulker box..."
                    onkeydown="if(event.key==='Enter')generate()">
             <button id="genBtn" onclick="generate()">Generate</button>
         </div>
@@ -159,18 +129,18 @@ HTML_PAGE = """<!DOCTYPE html>
             <div class="example-chips">
                 <span class="chip" onclick="tryExample(this)">diamond sword</span>
                 <span class="chip" onclick="tryExample(this)">golden apple</span>
-                <span class="chip" onclick="tryExample(this)">ender pearl</span>
+                <span class="chip" onclick="tryExample(this)">tool box</span>
                 <span class="chip" onclick="tryExample(this)">iron pickaxe</span>
-                <span class="chip" onclick="tryExample(this)">red potion bottle</span>
-                <span class="chip" onclick="tryExample(this)">bucket with water</span>
-                <span class="chip" onclick="tryExample(this)">green emerald gem</span>
-                <span class="chip" onclick="tryExample(this)">wooden bow</span>
+                <span class="chip" onclick="tryExample(this)">treasure box</span>
+                <span class="chip" onclick="tryExample(this)">shulker box</span>
+                <span class="chip" onclick="tryExample(this)">emerald</span>
+                <span class="chip" onclick="tryExample(this)">fire book</span>
             </div>
         </div>
     </div>
     <p class="footer">
         Powered by <a href="https://github.com/LangQi99/text2px">Text2Px DiT</a> |
-        16x16 RGBA | Diffusion Transformer
+        16x16 RGBA | Diffusion Transformer + CFG
     </p>
     <script>
         function tryExample(el) {
@@ -209,6 +179,15 @@ HTML_PAGE = """<!DOCTYPE html>
 </html>"""
 
 
+def encode_prompt(tok, prompt, length):
+    encoded = tok.encode(prompt)
+    bos = tok.token_to_id("<|bos|>")
+    eos = tok.token_to_id("<|eos|>")
+    pad = tok.token_to_id("<|pad|>")
+    ids = [bos] + encoded.ids[: length - 2] + [eos]
+    return ids + [pad] * (length - len(ids))
+
+
 class Text2PxHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/' or self.path == '/index.html':
@@ -226,11 +205,9 @@ class Text2PxHandler(BaseHTTPRequestHandler):
             body = self.rfile.read(content_length).decode('utf-8')
             data = json.loads(body)
             prompt = data.get('prompt', '').strip()
-
             if not prompt:
                 self._json_response({'error': 'Please enter a text description'})
                 return
-
             try:
                 result = generate_image(prompt)
                 self._json_response(result)
@@ -252,18 +229,34 @@ class Text2PxHandler(BaseHTTPRequestHandler):
         print(f"[{self.log_date_time_string()}] {args[0]}")
 
 
-def generate_image(prompt):
-    tokens = torch.tensor([tokenizer.encode(prompt)], dtype=torch.long).to(device)
-    mask = torch.tensor([tokenizer.get_mask(prompt)], dtype=torch.bool).to(device)
+def generate_image(prompt, cfg_scale=3.0):
+    token_length = int(metadata.get("token_length", 8))
+    mean = metadata["rgba_mean"]
+    std = metadata["rgba_std"]
+
+    token_ids = torch.tensor(
+        [encode_prompt(tokenizer, prompt, token_length)],
+        dtype=torch.long, device=device,
+    )
+    noise = torch.randn(1, 4, 16, 16, device=device)
+    z = torch.cat([noise, noise], dim=0)
+    token_cfg = torch.cat([token_ids, torch.zeros_like(token_ids)], dim=0)
+    model_kwargs = dict(token_ids=token_cfg, cfg_scale=cfg_scale)
 
     with torch.no_grad():
-        samples = diffusion.sample_ddim(model, tokens, mask, image_size=16, channels=4, steps=40)
-
-    img_tensor = (samples[0] + 1) / 2.0
-    img_tensor = img_tensor.clamp(0, 1)
-    img_array = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-
-    img = Image.fromarray(img_array, mode='RGBA')
+        samples = diffusion.ddim_sample_loop(
+            model.forward_with_cfg,
+            z.shape,
+            z,
+            clip_denoised=False,
+            model_kwargs=model_kwargs,
+            progress=False,
+            device=device,
+            eta=0.0,
+        )
+    samples, _ = samples.chunk(2, dim=0)
+    arr = denormalize_rgba(samples, mean, std)[0]
+    img = Image.fromarray(arr, mode='RGBA')
 
     buf_orig = io.BytesIO()
     img.save(buf_orig, format='PNG')
@@ -274,56 +267,42 @@ def generate_image(prompt):
     img_large.save(buf_large, format='PNG')
     img_b64_large = base64.b64encode(buf_large.getvalue()).decode()
 
-    return {
-        'image_original': img_b64_orig,
-        'image_large': img_b64_large,
-    }
+    return {'image_original': img_b64_orig, 'image_large': img_b64_large}
 
 
-def load_model(checkpoint_path):
-    global model, diffusion, tokenizer, device
+def load_model(checkpoint_path, tokenizer_path):
+    global model, diffusion, tokenizer, device, metadata
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    config = checkpoint['config']
+    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    metadata = ckpt.get("metadata", {})
+    model_name = metadata.get("model", "T2P-DiT-tiny")
+    tokenizer = Tokenizer.from_file(tokenizer_path)
 
-    model_config = config['model'].copy()
-    model_config['vocab_size'] = checkpoint['tokenizer_vocab_size']
-
-    model = Text2PxDiT(model_config).to(device)
-    state_key = 'ema_model_state_dict' if 'ema_model_state_dict' in checkpoint else 'model_state_dict'
-    model.load_state_dict(checkpoint[state_key])
+    model = create_reference_dit(
+        model_name,
+        vocab_size=metadata.get("vocab_size", tokenizer.get_vocab_size()),
+        token_seq_len=int(metadata.get("token_length", 8)),
+        num_timesteps=int(metadata.get("num_timestep", 300)),
+    ).to(device)
+    key = "ema" if "ema" in ckpt else "model"
+    model.load_state_dict(ckpt[key])
     model.eval()
 
-    tokenizer = CharTokenizer(max_len=config['model']['max_text_len'])
-    tokenizer_path = os.path.join(config['data']['dataset_dir'], 'tokenizer.json')
-    tokenizer.load(tokenizer_path)
-
-    diffusion = GaussianDiffusion(
-        timesteps=config['diffusion']['timesteps'],
-        beta_schedule=config['diffusion']['beta_schedule'],
-    )
-
-    print(f"Model loaded: {sum(p.numel() for p in model.parameters()):,} parameters")
+    diffusion = create_diffusion(str(metadata.get("num_timestep", 300)))
+    print(f"Model loaded: {model_name}, {sum(p.numel() for p in model.parameters()):,} parameters")
 
 
 if __name__ == '__main__':
-    checkpoint_path = sys.argv[1] if len(sys.argv) > 1 else 'checkpoints/final_model.pt'
-
-    if not os.path.exists(checkpoint_path):
-        alt_paths = ['checkpoints/latest.pt', 'checkpoints/checkpoint_epoch200.pt',
-                     'checkpoints/checkpoint_epoch150.pt', 'checkpoints/checkpoint_epoch100.pt']
-        for p in alt_paths:
-            if os.path.exists(p):
-                checkpoint_path = p
-                break
+    checkpoint_path = sys.argv[1] if len(sys.argv) > 1 else 'checkpoints/full_reference/final-model.pt'
+    tokenizer_path = sys.argv[2] if len(sys.argv) > 2 else 'ref_artifacts/token-7524n.json'
 
     print(f"Loading checkpoint: {checkpoint_path}")
-    load_model(checkpoint_path)
+    load_model(checkpoint_path, tokenizer_path)
 
-    port = int(sys.argv[2]) if len(sys.argv) > 2 else 5000
+    port = int(sys.argv[3]) if len(sys.argv) > 3 else 5000
     server = HTTPServer(('0.0.0.0', port), Text2PxHandler)
     print(f"\n{'='*50}")
     print(f"  Text2Px Web UI running at http://0.0.0.0:{port}")

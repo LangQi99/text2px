@@ -56,13 +56,13 @@ def select_indices(names, include, limit):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", default="ref_artifacts")
-    parser.add_argument("--model", choices=list(REFERENCE_DIT_CONFIGS), default="T2P-DiT-nano")
-    parser.add_argument("--epochs", type=int, default=20)
-    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--model", choices=list(REFERENCE_DIT_CONFIGS), default="T2P-DiT-mini")
+    parser.add_argument("--epochs", type=int, default=150)
+    parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--log-every", type=int, default=20)
-    parser.add_argument("--ckpt-every", type=int, default=200)
+    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--log-every", type=int, default=100)
+    parser.add_argument("--ckpt-every", type=int, default=3000)
     parser.add_argument("--subset-limit", type=int, default=0)
     parser.add_argument("--include", nargs="*", default=None)
     parser.add_argument("--out-dir", default="checkpoints/reference")
@@ -145,7 +145,8 @@ def main():
             if train_steps % args.log_every == 0:
                 print(
                     f"step={train_steps:06d} epoch={epoch:03d} "
-                    f"loss={running / args.log_every:.4f} sec={time() - started:.1f}"
+                    f"loss={running / args.log_every:.4f} sec={time() - started:.1f}",
+                    flush=True,
                 )
                 running = 0.0
 

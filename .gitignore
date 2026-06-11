@@ -3,29 +3,23 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Checkpoints and models
-checkpoints/*
-!checkpoints/final_model.pt
-!checkpoints/reference_box/
-!checkpoints/reference_box/final-model.pt
-!checkpoints/reference_box/metadata.json
-*.pt
-!checkpoints/final_model.pt
-!checkpoints/reference_box/final-model.pt
-*.pth
+# Checkpoints and models (keep final trained model)
+checkpoints/
+!checkpoints/full_reference/
+!checkpoints/full_reference/final-model.pt
+!checkpoints/full_reference/metadata.json
 
-# Generated outputs
+# Generated outputs (keep sample results)
 outputs/
-!outputs/
-outputs/*
-!outputs/reference_box_model_ddpm/
-!outputs/reference_box_model_ddpm/*.png
-!outputs/reference_box_dataset/
-!outputs/reference_box_dataset/*.png
+!outputs/full_reference/
+!outputs/full_reference/*.png
 samples/
 
 # Dataset images (too large for git)
 data/minecraft_items/images/
+
+# Reference data (large npy files tracked via git)
+# ref_artifacts/ is tracked
 
 # IDE
 .vscode/
