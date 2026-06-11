@@ -56,6 +56,10 @@ def select_indices(names, include, limit):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", default="ref_artifacts")
+    parser.add_argument("--img-data", default=None, help="Override img data npy file")
+    parser.add_argument("--token-ids", default=None, help="Override token ids npy file")
+    parser.add_argument("--names", default=None, help="Override names npy file")
+    parser.add_argument("--tokenizer", default=None, help="Override tokenizer json file")
     parser.add_argument("--model", choices=list(REFERENCE_DIT_CONFIGS), default="T2P-DiT-mini")
     parser.add_argument("--epochs", type=int, default=150)
     parser.add_argument("--batch-size", type=int, default=64)
@@ -70,10 +74,10 @@ def main():
     args = parser.parse_args()
 
     root = Path(args.data_dir)
-    token_ids = np.load(root / "imgIndexIds-8l-95t.npy")
-    img_data = np.load(root / "img16data-19180n.npy")
-    names = np.load(root / "img16index-19180n.npy")
-    tokenizer_path = root / "token-7524n.json"
+    token_ids = np.load(args.token_ids or root / "imgIndexIds-8l-95t.npy")
+    img_data = np.load(args.img_data or root / "img16data-19180n.npy")
+    names = np.load(args.names or root / "img16index-19180n.npy")
+    tokenizer_path = args.tokenizer or root / "token-7524n.json"
     tokenizer = Tokenizer.from_file(str(tokenizer_path))
 
     indices = select_indices(names, args.include, args.subset_limit)

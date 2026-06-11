@@ -5,14 +5,14 @@ __pycache__/
 
 # Checkpoints and models (keep final trained model)
 checkpoints/
-!checkpoints/full_reference/
-!checkpoints/full_reference/final-model.pt
-!checkpoints/full_reference/metadata.json
+!checkpoints/merged_train/
+!checkpoints/merged_train/final-model.pt
+!checkpoints/merged_train/metadata.json
 
 # Generated outputs (keep sample results)
 outputs/
-!outputs/full_reference/
-!outputs/full_reference/*.png
+!outputs/merged_train/
+!outputs/merged_train/*.png
 samples/
 
 # Dataset images (too large for git)

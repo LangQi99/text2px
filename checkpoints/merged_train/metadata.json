@@ -1,0 +1,21 @@
+{
+  "model": "T2P-DiT-tiny",
+  "vocab_size": 7935,
+  "token_length": 8,
+  "rgba_mean": [
+    59.14011764526367,
+    53.082496643066406,
+    49.46643829345703,
+    111.01077270507812
+  ],
+  "rgba_std": [
+    83.63945007324219,
+    77.18155670166016,
+    75.57439422607422,
+    130.12954711914062
+  ],
+  "num_timestep": 300,
+  "dataset_size": 23945,
+  "include": null,
+  "tokenizer_file": "ref_artifacts/token-merged.json"
+}

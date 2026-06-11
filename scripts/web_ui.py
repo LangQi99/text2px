@@ -296,8 +296,8 @@ def load_model(checkpoint_path, tokenizer_path):
 
 
 if __name__ == '__main__':
-    checkpoint_path = sys.argv[1] if len(sys.argv) > 1 else 'checkpoints/full_reference/final-model.pt'
-    tokenizer_path = sys.argv[2] if len(sys.argv) > 2 else 'ref_artifacts/token-7524n.json'
+    checkpoint_path = sys.argv[1] if len(sys.argv) > 1 else 'checkpoints/merged_train/final-model.pt'
+    tokenizer_path = sys.argv[2] if len(sys.argv) > 2 else 'ref_artifacts/token-merged.json'
 
     print(f"Loading checkpoint: {checkpoint_path}")
     load_model(checkpoint_path, tokenizer_path)
